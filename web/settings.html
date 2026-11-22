@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Flip Clock Settings</title>
+    <script>document.write('<script src="config.js?t=' + Date.now() + '"><\/script>');</script>
+    <script>document.write('<script src="presets.js?t=' + Date.now() + '"><\/script>');</script>
+    <script src="builtin-presets.js"></script>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f3f3f5;
+            --panel: #ffffff;
+            --line: rgba(0, 0, 0, .12);
+            --text: #1d1d1f;
+            --muted: #6e6e73;
+            --accent: #0a64d8;
+            --accent-text: #ffffff;
+            --ctl: rgba(0, 0, 0, .06);
+            --ctl-hover: rgba(0, 0, 0, .1);
+            --pop-shadow: 0 10px 30px rgba(0, 0, 0, .22);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1c1c1e;
+                --panel: #2a2a2d;
+                --line: rgba(255, 255, 255, .13);
+                --text: #f5f5f7;
+                --muted: #9a9aa0;
+                --accent: #3b8cf0;
+                --ctl: rgba(255, 255, 255, .09);
+                --ctl-hover: rgba(255, 255, 255, .15);
+                --pop-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            display: grid;
+            grid-template-rows: 52px 1fr;
+            font: 13px/1.35 -apple-system, system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+        }
+
+        /* ---------- toolbar (fixed height, nothing ever appears or disappears in it) ---------- */
+        #bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 14px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+        }
+
+        #who {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            width: 300px;
+        }
+
+        #dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #30b45a;
+            flex: none;
+        }
+
+        #dot.edited {
+            background: #f0a020;
+        }
+
+        #pname {
+            font-size: 15px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #badge {
+            flex: none;
+            font-size: 11px;
+            padding: 1px 7px;
+            border-radius: 9px;
+            background: rgba(240, 160, 32, .18);
+            color: #c77d00;
+            opacity: 0;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            #badge {
+                color: #ffb84d;
+            }
+        }
+
+        #badge.on {
+            opacity: 1;
+        }
+
+        .spacer {
+            flex: 1;
+        }
+
+        .seg {
+            display: inline-flex;
+        }
+
+        .seg .btn:not(:first-child) {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+            margin-left: 1px;
+        }
+
+        .seg .btn:not(:last-child) {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        .btn {
+            font: inherit;
+            color: var(--text);
+            background: var(--ctl);
+            border: 0;
+            border-radius: 6px;
+            padding: 5px 11px;
+            cursor: default;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--ctl-hover);
+        }
+
+        .btn:disabled {
+            opacity: .38;
+        }
+
+        .btn.primary {
+            background: var(--accent);
+            color: var(--accent-text);
+            font-weight: 600;
+        }
+
+        .btn.primary:hover:not(:disabled) {
+            filter: brightness(1.1);
+            background: var(--accent);
+        }
+
+        .btn.icon {
+            padding: 5px 8px;
+        }
+
+        /* ---------- main area ---------- */
+        main {
+            display: grid;
+            grid-template-columns: 1fr 410px;
+            min-height: 0;
+        }
+
+        #stageWrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            min-width: 0;
+            min-height: 0;
+        }
+
+        #stage {
+            position: relative;
+            overflow: hidden;
+            border-radius: 10px;
+            background: #000;
+            box-shadow: 0 0 0 1px var(--line), 0 8px 28px rgba(0, 0, 0, .25);
+        }
+
+        #stage iframe {
+            position: absolute;
+            left: 0;
+            top: 0;
+            border: 0;
+            transform-origin: 0 0;
+            pointer-events: none;
+        }
+
+        #toast {
+            position: absolute;
+            left: 50%;
+            bottom: 18px;
+            transform: translate(-50%, 8px);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            max-width: calc(100% - 40px);
+            padding: 8px 8px 8px 14px;
+            border-radius: 9px;
+            background: #232326;
+            color: #f5f5f7;
+            box-shadow: var(--pop-shadow);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .15s, transform .15s;
+        }
+
+        #toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+            pointer-events: auto;
+        }
+
+        #toast .btn {
+            background: rgba(255, 255, 255, .16);
+            color: #fff;
+            padding: 3px 10px;
+        }
+
+        /* ---------- right panel ---------- */
+        #panel {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            background: var(--panel);
+            border-left: 1px solid var(--line);
+        }
+
+        #tabs {
+            display: flex;
+            border-bottom: 1px solid var(--line);
+            padding: 0 8px;
+            flex: none;
+        }
+
+        #tabs button {
+            flex: 1;
+            font: inherit;
+            font-weight: 500;
+            color: var(--muted);
+            background: none;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            padding: 11px 4px 9px;
+            margin-bottom: -1px;
+        }
+
+        #tabs button.on {
+            color: var(--text);
+            border-bottom-color: var(--accent);
+        }
+
+        .page {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 18px 22px;
+            min-height: 0;
+        }
+
+        .page[hidden] {
+            display: none;
+        }
+
+        h4 {
+            margin: 18px 0 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: var(--muted);
+        }
+
+        h4:first-child {
+            margin-top: 2px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 138px 1fr 54px;
+            align-items: center;
+            gap: 10px;
+            min-height: 32px;
+        }
+
+        .row.wide {
+            grid-template-columns: 138px 1fr;
+        }
+
+        .row output {
+            text-align: right;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .row .end {
+            justify-self: end;
+        }
+
+        input[type=range] {
+            width: 100%;
+            margin: 0;
+        }
+
+        select,
+        input[type=text] {
+            font: inherit;
+            color: var(--text);
+            background: var(--ctl);
+            border: 1px solid transparent;
+            border-radius: 6px;
+            padding: 4px 8px;
+            width: 100%;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        input[type=text]:focus,
+        select:focus {
+            outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+            outline-offset: 0;
+        }
+
+        /* toggle switch */
+        .sw {
+            position: relative;
+            width: 34px;
+            height: 20px;
+            justify-self: end;
+        }
+
+        .sw input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            margin: 0;
+        }
+
+        .sw i {
+            position: absolute;
+            inset: 0;
+            border-radius: 10px;
+            background: var(--ctl-hover);
+            transition: background .12s;
+            pointer-events: none;
+        }
+
+        .sw i::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+            transition: transform .12s;
+        }
+
+        .sw input:checked+i {
+            background: var(--accent);
+        }
+
+        .sw input:checked+i::after {
+            transform: translateX(14px);
+        }
+
+        /* segmented control & chips */
+        .segctl {
+            display: flex;
+            background: var(--ctl);
+            border-radius: 7px;
+            padding: 2px;
+            gap: 2px;
+        }
+
+        .segctl button {
+            flex: 1;
+            font: inherit;
+            color: var(--text);
+            background: none;
+            border: 0;
+            border-radius: 5px;
+            padding: 4px 6px;
+        }
+
+        .segctl button.on {
+            background: var(--panel);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+            font-weight: 600;
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .chips button {
+            font: inherit;
+            min-width: 30px;
+            color: var(--text);
+            background: var(--ctl);
+            border: 0;
+            border-radius: 6px;
+            padding: 4px 8px;
+        }
+
+        .chips button:hover {
+            background: var(--ctl-hover);
+        }
+
+        .chips button.on {
+            background: var(--accent);
+            color: var(--accent-text);
+        }
+
+        /* colors */
+        .color {
+            display: grid;
+            grid-template-columns: 138px 40px 1fr;
+            gap: 10px;
+            align-items: center;
+            min-height: 34px;
+        }
+
+        .color input[type=color] {
+            width: 40px;
+            height: 24px;
+            padding: 0;
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            background: none;
+        }
+
+        .color input[type=text] {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 12px;
+        }
+
+        .note {
+            color: var(--muted);
+            font-size: 12px;
+            margin: 6px 0 0;
+        }
+
+        /* ---------- preset gallery ---------- */
+        .pHead {
+            position: sticky;
+            top: -14px;
+            z-index: 2;
+            margin: -14px -18px 10px;
+            padding: 14px 18px 10px;
+            background: var(--panel);
+        }
+
+        #live {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 30px;
+            margin-bottom: 8px;
+            padding: 0 6px 0 10px;
+            border-radius: 8px;
+            background: var(--ctl);
+        }
+
+        #live .lbl {
+            color: var(--muted);
+            flex: none;
+        }
+
+        #live b {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #live .btn {
+            height: 22px;
+            padding: 0 9px;
+            flex: none;
+        }
+
+        .tile .tag {
+            display: none;
+            position: absolute;
+            top: 9px;
+            left: 9px;
+            padding: 1px 6px;
+            border-radius: 8px;
+            background: #30b45a;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .tile.live .tag {
+            display: block;
+        }
+
+        #gallery {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .tile {
+            position: relative;
+            border-radius: 10px;
+            padding: 5px;
+            background: var(--ctl);
+            outline: 2px solid transparent;
+            cursor: default;
+        }
+
+        .tile:hover {
+            background: var(--ctl-hover);
+        }
+
+        .tile.sel {
+            outline-color: var(--accent);
+        }
+
+        .tile .mini {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 62px;
+            border-radius: 7px;
+            overflow: hidden;
+        }
+
+        .tile .mini i {
+            font-style: normal;
+            text-align: center;
+            flex: none;
+        }
+
+        .tile .mini b {
+            font-weight: 700;
+            margin: 0 5px;
+        }
+
+        .tile .nm {
+            padding: 5px 3px 2px;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .tile .del {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 20px;
+            height: 20px;
+            line-height: 18px;
+            padding: 0;
+            border: 0;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, .6);
+            color: #fff;
+            font-size: 14px;
+            display: none;
+        }
+
+        .tile:hover .del {
+            display: block;
+        }
+
+        .empty {
+            grid-column: 1 / -1;
+            color: var(--muted);
+            text-align: center;
+            padding: 30px 10px;
+        }
+
+        /* ---------- floating popovers (never move the layout) ---------- */
+        .pop {
+            position: fixed;
+            z-index: 20;
+            width: 300px;
+            padding: 14px;
+            border-radius: 11px;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            box-shadow: var(--pop-shadow);
+        }
+
+        .pop[hidden] {
+            display: none;
+        }
+
+        .pop h5 {
+            margin: 0 0 8px;
+            font-size: 13px;
+        }
+
+        .pop .acts {
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+            margin-top: 12px;
+        }
+
+        .pop label.chk {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+        }
+
+        #saveHint {
+            min-height: 17px;
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+    </style>
+</head>
+
+<body>
+    <header id="bar">
+        <div id="who"><span id="dot"></span><span id="pname">Default</span><span id="badge">Edited</span></div>
+        <div class="spacer"></div>
+        <span class="seg">
+            <button class="btn" id="rand" title="Roll a random look">Randomize</button>
+            <button class="btn icon" id="randOpts" title="Choose what Randomize changes">&#9662;</button>
+        </span>
+        <button class="btn" id="undo" disabled>Undo</button>
+        <button class="btn" id="revert" disabled>Revert</button>
+        <button class="btn" id="save">Save preset&hellip;</button>
+        <button class="btn primary" id="apply">Apply to wallpaper</button>
+    </header>
+
+    <main>
+        <section id="stageWrap">
+            <div id="stage"><iframe id="frame" src="index.html"></iframe></div>
+            <div id="toast"><span id="toastMsg"></span><button class="btn" id="toastAct" hidden></button></div>
+        </section>
+
+        <aside id="panel">
+            <nav id="tabs">
+                <button data-tab="presets" class="on">Presets</button>
+                <button data-tab="look">Look</button>
+                <button data-tab="type">Type</button>
+                <button data-tab="layout">Layout</button>
+            </nav>
+            <div class="page" data-page="presets">
+                <div class="pHead">
+                    <div id="live"><span class="lbl">On wallpaper:</span><b id="liveName"></b><button class="btn" id="liveGo">Load</button></div>
+                    <input id="search" type="text" placeholder="Search presets">
+                    <div class="chips" id="cats" style="margin-top:8px"></div>
+                </div>
+                <div id="gallery"></div>
+            </div>
+            <div class="page" data-page="look" hidden></div>
+            <div class="page" data-page="type" hidden></div>
+            <div class="page" data-page="layout" hidden></div>
+        </aside>
+    </main>
+
+    <!-- popovers -->
+    <div class="pop" id="popSave" hidden>
+        <h5>Save as preset</h5>
+        <input id="newName" type="text" placeholder="Name your preset" maxlength="40">
+        <div id="saveHint"></div>
+        <div class="acts"><button class="btn" id="saveCancel">Cancel</button><button class="btn primary" id="saveGo">Save</button></div>
+    </div>
+    <div class="pop" id="popRand" hidden>
+        <h5>Randomize changes&hellip;</h5>
+        <label class="chk"><input type="checkbox" id="r-colors" checked> Colors</label>
+        <label class="chk"><input type="checkbox" id="r-fonts" checked> Font</label>
+        <label class="chk"><input type="checkbox" id="r-shape" checked> Shape &amp; spacing</label>
+        <label class="chk"><input type="checkbox" id="r-layout" checked> Seconds &amp; separator</label>
+        <label class="chk"><input type="checkbox" id="r-motion" checked> Flip speed</label>
+    </div>
+
+    <script>
+        // ==================================================================
+        // Data model
+        // ==================================================================
+        const DEFAULTS = {
+            showSeconds: true, hour12: false,
+            separator: ":", blinkSeparator: true,
+            size: 0.9,
+            widthRatio: 0.72, digitGap: 12, groupGap: 26, radius: 16, dividerWidth: 1.5,
+            fontFamily: "Arial, sans-serif", fontWeight: 700, fontScale: 0.83,
+            themeMode: "dark",
+            background: "#000000", cardColor: "#08090c", textColor: "#ffffff",
+            dividerColor: "#1c1d22", separatorColor: "#ffffff",
+            lightBackground: "#eceff3", lightCardColor: "#ffffff", lightTextColor: "#14171a",
+            lightDividerColor: "#d5d9df", lightSeparatorColor: "#14171a",
+            flipDuration: 350
+        };
+        const KEYS = Object.keys(DEFAULTS);
+
+        // Accepts current and older config shapes, returns a complete current-shape config.
+        function norm(p) {
+            const c = Object.assign({}, DEFAULTS);
+            if (!p) return c;
+            for (const k of KEYS) if (p[k] !== undefined) c[k] = p[k];
+            if (p.size === undefined && p.fitMargin !== undefined) c.size = p.fitMargin;
+            if (p.flipDuration === undefined && p.animate === false) c.flipDuration = 0;
+            if (p.showSeparator === false) c.separator = "";
+            return c;
+        }
+        const sig = c => JSON.stringify(KEYS.map(k => c[k]));
+
+        // ---- presets ----
+        const RAW = window.FLIPCLOCK_BUILTIN || { regular: {}, fun: {} };
+        const CATS = ["Everyday", "Pro", "Retro", "Colorful", "Fun"];
+        const CAT_OF = {
+            "Default": "Everyday", "System Auto (dark / light)": "Everyday", "Big Minimal (HH:MM)": "Everyday", "Compact Mini": "Everyday",
+            "Boardroom Slate": "Pro", "Swiss Station": "Pro", "Executive Gold": "Pro", "Corporate Blue": "Pro", "Paper (light, serif)": "Pro",
+            "Terminal Green": "Retro", "Amber CRT": "Retro", "Orange Retro": "Retro", "Square Mono": "Retro",
+            "Neon Night": "Colorful", "Sunset": "Colorful", "Forest": "Colorful", "Ocean": "Colorful", "Rose Gold Light": "Colorful"
+        };
+        const BUILTIN = {}, CAT = {};
+        for (const [n, p] of Object.entries(RAW.regular)) { BUILTIN[n] = norm(p); CAT[n] = CAT_OF[n] || "Everyday"; }
+        for (const [n, p] of Object.entries(RAW.fun)) { BUILTIN[n] = norm(p); CAT[n] = "Fun"; }
+
+        let USER = {};
+        for (const [n, p] of Object.entries(window.FLIPCLOCK_PRESETS || {})) USER[n] = norm(p);
+        const isBuiltin = n => Object.prototype.hasOwnProperty.call(BUILTIN, n);
+        const isUser = n => Object.prototype.hasOwnProperty.call(USER, n);
+        const getPreset = n => Object.assign({}, isUser(n) ? USER[n] : BUILTIN[n]);
+
+        function findMatch(c) {
+            const s = sig(c);
+            for (const n of Object.keys(USER)) if (sig(USER[n]) === s) return n;
+            for (const n of Object.keys(BUILTIN)) if (sig(BUILTIN[n]) === s) return n;
+            return null;
+        }
+
+        // ---- state ----
+        const saved = window.FLIPCLOCK || {};
+        let cfg = norm(saved);
+        let base = (saved._preset && (isBuiltin(saved._preset) || isUser(saved._preset))) ? saved._preset : null;
+        // what is on the wallpaper right now (updated when Apply is pressed)
+        const applied0 = norm(saved);
+        let applied = applied0;
+        let appliedName = findMatch(applied0) || base;
+        let randomized = false, suggested = "";
+        let history = [];
+        let activeTab = "presets", palMode = "dark";
+        const refreshers = [];
+        const fonts = window.__FONTS__ || ["Arial", "Helvetica Neue", "Menlo", "Impact", "Futura", "Courier New", "Georgia"];
+
+        const $ = id => document.getElementById(id);
+        function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; }
+        const firstFamily = f => String(f).split(",")[0].trim().replace(/^["']|["']$/g, "");
+        const pct = v => Math.round(v * 100) + "%";
+
+        function toHex(c) {
+            const x = document.createElement("canvas").getContext("2d");
+            x.fillStyle = "#000"; x.fillStyle = c;
+            return x.fillStyle;
+        }
+
+        // ==================================================================
+        // Toast (floating, never moves the layout)
+        // ==================================================================
+        let toastTimer;
+        function hideToast() { $("toast").classList.remove("show"); }
+        function toast(msg, actLabel, actFn) {
+            $("toastMsg").textContent = msg;
+            const a = $("toastAct");
+            a.hidden = !actLabel;
+            if (actLabel) { a.textContent = actLabel; a.onclick = () => { hideToast(); actFn && actFn(); }; }
+            $("toast").classList.add("show");
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(hideToast, actLabel ? 7000 : 2600);
+        }
+
+        // ==================================================================
+        // Preview (the clock page is told about changes, never reloaded)
+        // ==================================================================
+        const frame = $("frame"), stage = $("stage"), wrap = $("stageWrap");
+        const SW = screen.width, SH = screen.height;
+        frame.style.width = SW + "px"; frame.style.height = SH + "px";
+
+        function layoutStage() {
+            const k = Math.max(0.05, Math.min((wrap.clientWidth - 40) / SW, (wrap.clientHeight - 40) / SH));
+            stage.style.width = (SW * k) + "px";
+            stage.style.height = (SH * k) + "px";
+            frame.style.transform = `scale(${k})`;
+        }
+        function sendPreview() {
+            const c = Object.assign({}, cfg);
+            if (activeTab === "look") c._theme = palMode;      // show the palette you are editing
+            try { frame.contentWindow.postMessage({ flipclock: c }, "*"); } catch (e) { }
+        }
+        let pending = false;
+        function schedulePreview() {
+            if (pending) return;
+            pending = true;
+            requestAnimationFrame(() => { pending = false; sendPreview(); });
+        }
+        frame.addEventListener("load", sendPreview);
+        window.addEventListener("resize", layoutStage);
+
+        // ==================================================================
+        // Header state
+        // ==================================================================
+        function updateHeader() {
+            const match = findMatch(cfg);
+            if (match) base = match;
+            let name, badge = "";
+            if (match) name = match;
+            else if (base) { name = base; badge = "Edited"; }
+            else { name = randomized ? "Random look" : "Untitled"; badge = randomized ? "Not saved" : "Unsaved"; }
+            $("pname").textContent = name;
+            $("badge").textContent = badge || "Edited";
+            $("badge").classList.toggle("on", !!badge);
+            $("dot").classList.toggle("edited", !match);
+            $("revert").disabled = !(base && !match);
+            $("undo").disabled = history.length === 0;
+            document.querySelectorAll(".tile").forEach(t => {
+                t.classList.toggle("sel", t.dataset.name === match);
+                t.classList.toggle("live", t.dataset.name === appliedName);
+            });
+            $("liveName").textContent = appliedName || "Custom look";
+            $("liveGo").disabled = sig(cfg) === sig(applied);
+        }
+
+        function changed() { updateHeader(); schedulePreview(); }
+        function setKey(k, v) { cfg[k] = v; randomized = false; changed(); }
+        function refreshForm() { refreshers.forEach(f => f()); }
+
+        function pushHistory() {
+            history.push({ cfg: Object.assign({}, cfg), base, randomized });
+            if (history.length > 40) history.shift();
+        }
+
+        // ==================================================================
+        // Presets gallery
+        // ==================================================================
+        let catFilter = "All", query = "";
+
+        function tileEl(name, p, mine) {
+            const light = p.themeMode === "light";
+            const pal = light
+                ? { bg: p.lightBackground, card: p.lightCardColor, text: p.lightTextColor, sep: p.lightSeparatorColor }
+                : { bg: p.background, card: p.cardColor, text: p.textColor, sep: p.separatorColor };
+            const t = el("div", "tile"); t.dataset.name = name; t.title = name;
+            const cw = Math.max(10, Math.round(34 * p.widthRatio)), r = Math.min(10, Math.round(p.radius * 0.3));
+            const digit = d => `<i style="width:${cw}px;height:38px;line-height:38px;border-radius:${r}px;background:${pal.card};color:${pal.text};` +
+                `font:${p.fontWeight} ${Math.round(26 * p.fontScale / 0.83)}px/38px ${p.fontFamily};margin:0 ${Math.max(0, Math.round(p.digitGap / 6))}px">${d}</i>`;
+            t.innerHTML = `<div class="mini" style="background:${pal.bg}">${digit(1)}${digit(2)}` +
+                `<b style="color:${pal.sep};font-family:${p.fontFamily}">${p.separator || ""}</b>${digit(3)}${digit(4)}</div>` +
+                `<div class="nm"></div><span class="tag">On wallpaper</span>` + (mine ? '<button class="del" title="Delete preset">&times;</button>' : "");
+            t.querySelector(".nm").textContent = name + (p.themeMode === "auto" ? "  (auto)" : "");
+            t.onclick = e => {
+                if (e.target.classList && e.target.classList.contains("del")) return;
+                loadPreset(name);
+            };
+            if (mine) t.querySelector(".del").onclick = () => deletePreset(name);
+            return t;
+        }
+
+        function renderGallery() {
+            const g = $("gallery"); g.innerHTML = "";
+            const q = query.trim().toLowerCase();
+            const match = n => !q || n.toLowerCase().includes(q);
+            let count = 0;
+            if (catFilter === "All" || catFilter === "Mine")
+                for (const n of Object.keys(USER)) if (match(n)) { g.appendChild(tileEl(n, USER[n], true)); count++; }
+            if (catFilter !== "Mine")
+                for (const n of Object.keys(BUILTIN))
+                    if (match(n) && (catFilter === "All" || CAT[n] === catFilter)) { g.appendChild(tileEl(n, BUILTIN[n], false)); count++; }
+            if (!count) g.appendChild(el("div", "empty", catFilter === "Mine" && !q ? "You have no saved presets yet.<br>Use <b>Save preset&hellip;</b> to keep a look." : "Nothing matches."));
+            updateHeader();
+        }
+
+        function renderCats() {
+            const box = $("cats"); box.innerHTML = "";
+            ["All", "Mine", ...CATS].forEach(c => {
+                const b = el("button", c === catFilter ? "on" : "", c);
+                b.onclick = () => { catFilter = c; renderCats(); renderGallery(); };
+                box.appendChild(b);
+            });
+        }
+        $("search").oninput = e => { query = e.target.value; renderGallery(); };
+
+        function loadPreset(name) {
+            pushHistory();
+            cfg = getPreset(name); base = name; randomized = false;
+            refreshForm(); updateHeader(); schedulePreview();
+            toast(`Previewing "${name}" - click Apply to use it`);
+        }
+
+        function persistPresets() {
+            return post("presets.js", "/* Your saved Flip Clock presets. Managed by the Settings window. */\n" +
+                "window.FLIPCLOCK_PRESETS = " + JSON.stringify(USER, null, 2) + ";\n");
+        }
+
+        function deletePreset(name) {
+            const copy = USER[name];
+            delete USER[name];
+            if (base === name) base = null;
+            persistPresets(); renderGallery();
+            toast(`Deleted "${name}"`, "Undo", () => { USER[name] = copy; persistPresets(); renderGallery(); });
+        }
+
+        // ==================================================================
+        // Panel pages
+        // ==================================================================
+        function heading(page, text) { page.appendChild(el("h4", "", text)); }
+
+        function addToggle(page, key, label) {
+            const row = el("div", "row wide");
+            row.appendChild(el("label", "", label));
+            const sw = el("label", "sw"); const i = el("input"); i.type = "checkbox";
+            sw.appendChild(i); sw.appendChild(el("i"));
+            i.onchange = () => setKey(key, i.checked);
+            row.appendChild(sw); page.appendChild(row);
+            refreshers.push(() => { i.checked = !!cfg[key]; });
+        }
+
+        function addRange(page, key, label, min, max, step, show) {
+            const row = el("div", "row");
+            row.appendChild(el("label", "", label));
+            const r = el("input"); r.type = "range"; r.min = min; r.max = max; r.step = step;
+            const out = el("output");
+            r.oninput = () => { out.textContent = show(+r.value); setKey(key, +r.value); };
+            row.appendChild(r); row.appendChild(out); page.appendChild(row);
+            refreshers.push(() => { r.value = cfg[key]; out.textContent = show(+cfg[key]); });
+        }
+
+        function addColor(page, key, label) {
+            const row = el("div", "color");
+            row.appendChild(el("label", "", label));
+            const c = el("input"); c.type = "color";
+            const t = el("input"); t.type = "text"; t.maxLength = 7; t.spellcheck = false;
+            c.oninput = () => { t.value = c.value; setKey(key, c.value); };
+            t.oninput = () => { if (/^#[0-9a-f]{6}$/i.test(t.value)) { c.value = t.value; setKey(key, t.value.toLowerCase()); } };
+            row.appendChild(c); row.appendChild(t); page.appendChild(row);
+            refreshers.push(() => { c.value = toHex(cfg[key]); t.value = c.value; });
+        }
+
+        function buildLook() {
+            const page = document.querySelector('[data-page="look"]');
+            heading(page, "Colors follow");
+            const seg = el("div", "segctl");
+            [["dark", "Dark"], ["light", "Light"], ["auto", "Auto"]].forEach(([v, t]) => {
+                const b = el("button", "", t); b.dataset.v = v;
+                b.onclick = () => setKey("themeMode", v);
+                seg.appendChild(b);
+            });
+            page.appendChild(seg);
+            refreshers.push(() => seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === cfg.themeMode)));
+            page.appendChild(el("p", "note", "&ldquo;Auto&rdquo; follows the macOS appearance: the clock switches between its dark and light colors by itself."));
+
+            heading(page, "Edit palette");
+            const pal = el("div", "segctl");
+            [["dark", "Dark colors"], ["light", "Light colors"]].forEach(([v, t]) => {
+                const b = el("button", v === palMode ? "on" : "", t); b.dataset.v = v;
+                b.onclick = () => { palMode = v; pal.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.v === v)); showPal(); sendPreview(); };
+                pal.appendChild(b);
+            });
+            page.appendChild(pal);
+
+            const dark = el("div"), light = el("div");
+            dark.style.marginTop = light.style.marginTop = "8px";
+            [["background", "Background"], ["cardColor", "Card"], ["textColor", "Digits"], ["dividerColor", "Middle line"], ["separatorColor", "Separator"]]
+                .forEach(([k, l]) => addColor(dark, k, l));
+            [["lightBackground", "Background"], ["lightCardColor", "Card"], ["lightTextColor", "Digits"], ["lightDividerColor", "Middle line"], ["lightSeparatorColor", "Separator"]]
+                .forEach(([k, l]) => addColor(light, k, l));
+            page.appendChild(dark); page.appendChild(light);
+            function showPal() { dark.hidden = palMode !== "dark"; light.hidden = palMode !== "light"; }
+            showPal();
+        }
+
+        function buildType() {
+            const page = document.querySelector('[data-page="type"]');
+            heading(page, "Digits");
+            const row = el("div", "row wide");
+            row.appendChild(el("label", "", "Font"));
+            const sel = el("select");
+            const nice = NICE_FONTS.filter(f => fonts.includes(f));
+            sel.innerHTML = (nice.length ? `<optgroup label="Suggested">${nice.map(f => `<option>${f}</option>`).join("")}</optgroup>` : "") +
+                `<optgroup label="All installed fonts">${fonts.map(f => `<option>${f}</option>`).join("")}</optgroup>`;
+            sel.onchange = () => setKey("fontFamily", `"${sel.value}", sans-serif`);
+            row.appendChild(sel); page.appendChild(row);
+            refreshers.push(() => {
+                const f = firstFamily(cfg.fontFamily);
+                if (![...sel.options].some(o => o.value === f)) sel.insertBefore(el("option", "", f), sel.firstChild);
+                sel.value = f;
+            });
+            addRange(page, "fontWeight", "Weight", 100, 900, 100, v => v);
+            addRange(page, "fontScale", "Digit size", 0.5, 1.1, 0.01, pct);
+
+            heading(page, "Separator");
+            const chips = el("div", "chips");
+            ["", ":", ".", "-", "|", "/", "\u2022", "~", "*", "\u00BB"].forEach(s => {
+                const b = el("button", "", s === "" ? "None" : s); b.dataset.v = s;
+                b.onclick = () => setKey("separator", s);
+                chips.appendChild(b);
+            });
+            const r1 = el("div", "row wide"); r1.appendChild(el("label", "", "Character"));
+            r1.appendChild(chips); page.appendChild(r1);
+            const r2 = el("div", "row wide"); r2.appendChild(el("label", "", "Or type your own"));
+            const custom = el("input"); custom.type = "text"; custom.maxLength = 3; custom.placeholder = "e.g. z";
+            custom.oninput = () => setKey("separator", custom.value);
+            r2.appendChild(custom); page.appendChild(r2);
+            addToggle(page, "blinkSeparator", "Blink");
+            refreshers.push(() => {
+                chips.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === cfg.separator));
+                if (document.activeElement !== custom) custom.value = [...chips.querySelectorAll("button")].some(b => b.dataset.v === cfg.separator) ? "" : cfg.separator;
+            });
+        }
+
+        function buildLayout() {
+            const page = document.querySelector('[data-page="layout"]');
+            heading(page, "Time");
+            addToggle(page, "showSeconds", "Show seconds");
+            addToggle(page, "hour12", "12-hour clock");
+            heading(page, "Size & shape");
+            addRange(page, "size", "Clock size", 0.1, 1, 0.01, pct);
+            addRange(page, "widthRatio", "Card width", 0.4, 1.2, 0.01, pct);
+            addRange(page, "radius", "Corner radius", 0, 80, 1, v => v);
+            addRange(page, "dividerWidth", "Middle line", 0, 10, 0.5, v => v);
+            heading(page, "Spacing");
+            addRange(page, "digitGap", "Between digits", 0, 60, 1, v => v);
+            addRange(page, "groupGap", "Around separators", 0, 120, 1, v => v);
+            heading(page, "Motion");
+            addRange(page, "flipDuration", "Flip duration", 0, 1000, 10, v => v === 0 ? "Off" : v + " ms");
+        }
+
+        // tabs
+        document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+            activeTab = b.dataset.tab;
+            document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b));
+            document.querySelectorAll(".page").forEach(p => p.hidden = p.dataset.page !== activeTab);
+            sendPreview();
+        });
+
+        // ==================================================================
+        // Randomizer
+        // ==================================================================
+        const rnd = (a, b) => a + Math.random() * (b - a);
+        const rint = (a, b) => Math.floor(rnd(a, b + 1));
+        const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+        const chance = p => Math.random() < p;
+        const step = (v, s) => Math.round(v / s) * s;
+
+        function hsl(h, s, l) {
+            h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
+            const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+            const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+            return "#" + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, "0")).join("");
+        }
+        const lum = hex => {
+            const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+                .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+        function ensureContrast(fg, bg, min) {
+            if (contrast(fg, bg) >= min) return fg;
+            return contrast("#ffffff", bg) >= contrast("#000000", bg) ? "#ffffff" : "#000000";
+        }
+
+        function randomColors() {
+            const h = rint(0, 359);
+            const style = pick(["mono", "mono", "analogous", "complement", "neon", "bold", "pastel"]);
+            const h2 = style === "complement" ? h + 180 : style === "analogous" ? h + pick([-40, 40]) : h;
+            const sat = style === "neon" ? rint(85, 100) : style === "pastel" ? rint(40, 60) : rint(30, 80);
+            let dark;
+            if (style === "bold") {
+                const cl = rint(42, 56);
+                dark = {
+                    background: hsl(h, rint(40, 70), rint(5, 10)), cardColor: hsl(h, rint(70, 95), cl),
+                    textColor: cl < 52 ? "#ffffff" : "#111111", separatorColor: hsl(h2 + 30, 90, 65)
+                };
+                dark.dividerColor = dark.background;
+            } else if (style === "pastel") {
+                dark = {
+                    background: hsl(h, rint(25, 40), rint(14, 22)), cardColor: hsl(h, rint(25, 40), rint(24, 32)),
+                    textColor: hsl(h2, sat, rint(80, 90)), separatorColor: hsl(h2 + 20, sat, rint(70, 80))
+                };
+                dark.dividerColor = dark.background;
+            } else {
+                const bgL = style === "neon" ? rint(2, 6) : rint(4, 11);
+                dark = {
+                    background: hsl(h, rint(20, 70), bgL), cardColor: hsl(h, rint(20, 70), bgL + rint(4, 9)),
+                    textColor: hsl(h2, sat, style === "neon" ? rint(55, 65) : rint(72, 92)),
+                    separatorColor: hsl(h2 + (style === "neon" ? 150 : 0), sat, rint(55, 75))
+                };
+                dark.dividerColor = style === "neon" ? dark.separatorColor : hsl(h, 40, bgL);
+            }
+            const light = {
+                lightBackground: hsl(h, rint(20, 50), rint(88, 95)), lightCardColor: hsl(h, rint(20, 60), rint(96, 100)),
+                lightTextColor: hsl(h2, rint(40, 80), rint(14, 30)), lightSeparatorColor: hsl(h2, rint(40, 75), rint(35, 50))
+            };
+            light.lightDividerColor = light.lightBackground;
+            dark.textColor = ensureContrast(dark.textColor, dark.cardColor, 4.5);
+            dark.separatorColor = ensureContrast(dark.separatorColor, dark.background, 3);
+            light.lightTextColor = ensureContrast(light.lightTextColor, light.lightCardColor, 4.5);
+            light.lightSeparatorColor = ensureContrast(light.lightSeparatorColor, light.lightBackground, 3);
+            return Object.assign(dark, light, { themeMode: pick(["dark", "dark", "auto", "light"]) });
+        }
+
+        const BAD_FONT = /symbol|wingding|webding|dingbat|emoji|ornament|braille|lastresort|zapf|marlett|stix|math|apple color|\bgeneva\b/i;
+        var NICE_FONTS = ["Helvetica Neue", "Avenir Next", "Avenir", "Futura", "Georgia", "Palatino", "Baskerville",
+            "Didot", "Optima", "Gill Sans", "Menlo", "Monaco", "Courier New", "Impact", "Rockwell", "Verdana", "Trebuchet MS",
+            "Chalkboard SE", "Marker Felt", "Papyrus", "Copperplate", "American Typewriter", "Arial Black",
+            "DIN Condensed", "Phosphate", "Big Caslon", "Hoefler Text", "Skia", "Bradley Hand"];
+        function randomFont() {
+            const have = NICE_FONTS.filter(f => fonts.includes(f));
+            const pool = fonts.filter(f => !BAD_FONT.test(f));
+            const f = (have.length && chance(0.75)) ? pick(have) : (pool.length ? pick(pool) : "Arial");
+            return `"${f}", sans-serif`;
+        }
+
+        const ADJ = ["Spicy", "Cosmic", "Sleepy", "Chaotic", "Fancy", "Suspicious", "Crunchy", "Majestic", "Wobbly",
+            "Turbo", "Quantum", "Sassy", "Grumpy", "Glorious", "Mysterious", "Rebel", "Cozy", "Haunted", "Electric",
+            "Fluffy", "Dramatic", "Unhinged", "Legendary", "Moody", "Tiny", "Overcaffeinated"];
+        const NOUN = ["Pickle", "Waffle", "Llama", "Toaster", "Goblin", "Noodle", "Wizard", "Muffin", "Pirate", "Cactus",
+            "Sloth", "Dragon", "Burrito", "Penguin", "Robot", "Walrus", "Donut", "Raccoon", "Unicorn", "Potato",
+            "Ninja", "Pancake", "Octopus", "Meerkat", "Biscuit", "Yeti"];
+
+        function randomize() {
+            pushHistory();
+            const next = Object.assign({}, cfg);
+            if ($("r-colors").checked) Object.assign(next, randomColors());
+            if ($("r-fonts").checked) {
+                next.fontFamily = randomFont();
+                next.fontWeight = pick([300, 400, 500, 600, 700, 700, 800, 900]);
+                next.fontScale = step(rnd(0.7, 0.9), 0.01);
+            }
+            if ($("r-shape").checked) {
+                next.radius = chance(0.15) ? 0 : rint(2, chance(0.3) ? 64 : 28);
+                next.digitGap = rint(0, 24);
+                next.groupGap = rint(8, 50);
+                next.dividerWidth = chance(0.2) ? 0 : step(rnd(0.5, 4), 0.5);
+                next.widthRatio = step(rnd(0.5, 0.95), 0.01);
+            }
+            if ($("r-layout").checked) {
+                next.showSeconds = chance(0.4);
+                next.separator = pick([":", ":", ":", ".", "-", "|", "/", "\u2022", "~", "*", "\u00BB"]);
+                next.blinkSeparator = chance(0.7);
+                next.size = step(rnd(0.78, 0.92), 0.01);
+            }
+            if ($("r-motion").checked) next.flipDuration = pick([60, 100, 180, 250, 350, 350, 500, 700, 1000]);
+
+            cfg = next; base = null; randomized = true;
+            suggested = `${pick(ADJ)} ${pick(NOUN)}`;
+            refreshForm(); updateHeader(); schedulePreview();
+            toast(`Rolled "${suggested}"`, "Save it\u2026", openSave);
+        }
+
+        // ==================================================================
+        // Popovers
+        // ==================================================================
+        function place(pop, anchor) {
+            const r = anchor.getBoundingClientRect();
+            pop.style.top = (r.bottom + 6) + "px";
+            pop.style.left = Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth)) + "px";
+        }
+        function closePops() { $("popSave").hidden = true; $("popRand").hidden = true; }
+
+        function openSave() {
+            closePops();
+            const pop = $("popSave"); pop.hidden = false; place(pop, $("save"));
+            $("newName").value = (base && isUser(base)) ? base : (randomized && suggested) ? suggested : "";
+            checkName(); $("newName").focus(); $("newName").select();
+        }
+        function checkName() {
+            const n = $("newName").value.trim();
+            let hint = "", ok = !!n;
+            if (n && isBuiltin(n)) { hint = "That name belongs to a built-in preset."; ok = false; }
+            else if (n && isUser(n)) hint = `Replaces your preset "${n}".`;
+            $("saveHint").textContent = hint; $("saveGo").disabled = !ok;
+        }
+        function doSave() {
+            const n = $("newName").value.trim();
+            if (!n || isBuiltin(n)) return;
+            const replaced = isUser(n);
+            USER[n] = norm(cfg); base = n; randomized = false;
+            persistPresets(); closePops(); renderGallery();
+            toast(replaced ? `Updated "${n}"` : `Saved "${n}"`);
+        }
+        $("save").onclick = e => { e.stopPropagation(); $("popSave").hidden ? openSave() : closePops(); };
+        $("newName").oninput = checkName;
+        $("newName").onkeydown = e => { if (e.key === "Enter") doSave(); };
+        $("saveGo").onclick = doSave;
+        $("saveCancel").onclick = closePops;
+        $("randOpts").onclick = e => {
+            e.stopPropagation();
+            const pop = $("popRand");
+            if (!pop.hidden) { closePops(); return; }
+            closePops(); pop.hidden = false; place(pop, $("randOpts"));
+        };
+        document.addEventListener("mousedown", e => { if (!e.target.closest(".pop") && !e.target.closest("#save,#randOpts")) closePops(); });
+        document.addEventListener("keydown", e => { if (e.key === "Escape") closePops(); });
+
+        // ==================================================================
+        // Toolbar actions
+        // ==================================================================
+        $("rand").onclick = randomize;
+        $("undo").onclick = () => {
+            const h = history.pop(); if (!h) return;
+            cfg = h.cfg; base = h.base; randomized = h.randomized;
+            refreshForm(); updateHeader(); schedulePreview();
+        };
+        $("revert").onclick = () => { if (base) loadPreset(base); };
+
+        function post(file, text) {
+            if (window.webkit && window.webkit.messageHandlers.save) {
+                window.webkit.messageHandlers.save.postMessage({ file, text });
+                return true;
+            }
+            toast("Not running inside the app - nothing was saved");
+            return false;
+        }
+        $("apply").onclick = () => {
+            const out = Object.assign({}, cfg);
+            const name = findMatch(cfg) || base;
+            if (name) out._preset = name;
+            const text = "/* Written by the Flip Clock Settings window. You can also edit this by hand. */\n" +
+                "window.FLIPCLOCK = " + JSON.stringify(out, null, 4) + ";\n";
+            if (post("config.js", text)) {
+                applied = Object.assign({}, cfg); appliedName = name || null;
+                updateHeader();
+                toast("Applied to your wallpaper");
+            }
+        };
+        $("liveGo").onclick = () => {
+            pushHistory();
+            cfg = Object.assign({}, applied); base = appliedName; randomized = false;
+            refreshForm(); updateHeader(); schedulePreview();
+            toast("Showing what is on your wallpaper");
+        };
+
+
+
+        // ==================================================================
+        // Boot
+        // ==================================================================
+        buildLook(); buildType(); buildLayout();
+        renderCats();
+        renderGallery();
+        refreshForm();
+        layoutStage();
+        updateHeader();
+    </script>
+</body>
+
+</html>

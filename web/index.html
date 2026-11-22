@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flip Clock</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* All of these are set from config.js by the script below. */
+        :root {
+            --h: 360px;
+            --w: 260px;
+            --bg: #000;
+            --card: #08090c;
+            --text: #fff;
+            --divider: #1c1d22;
+            --divider-w: 1.5px;
+            --sep-color: #fff;
+            --radius: 16px;
+            --font: Arial, sans-serif;
+            --weight: 700;
+            --font-size: 300px;
+            --dy: 0px;
+            --sep-size: 120px;
+            --dur: 350ms;
+            --digit-gap: 12px;
+            --group-gap: 26px;
+        }
+
+        body {
+            background: var(--bg);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: var(--font);
+        }
+
+        .clock {
+            display: flex;
+            align-items: center;
+            gap: var(--group-gap);
+            flex: none;
+            transform-origin: center;
+        }
+
+        .pair {
+            display: flex;
+            gap: var(--digit-gap);
+        }
+
+        .separator {
+            color: var(--sep-color);
+            font-size: var(--sep-size);
+            font-weight: var(--weight);
+            font-family: var(--font);
+            line-height: 1;
+        }
+
+        .separator.blink {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: .3;
+            }
+        }
+
+        .flip {
+            position: relative;
+            width: var(--w);
+            height: var(--h);
+        }
+
+        .card {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            perspective: 1000px;
+        }
+
+        .upper,
+        .lower,
+        .flip-upper,
+        .flip-lower {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            overflow: hidden;
+            background: var(--card);
+            color: var(--text);
+        }
+
+        .upper,
+        .flip-upper {
+            top: 0;
+            border-radius: var(--radius) var(--radius) 0 0;
+            border-bottom: var(--divider-w) solid var(--divider);
+        }
+
+        .lower,
+        .flip-lower {
+            bottom: 0;
+            border-radius: 0 0 var(--radius) var(--radius);
+        }
+
+        /* each span is a full-height digit; the half-height parent clips it */
+        .upper span,
+        .lower span,
+        .flip-upper span,
+        .flip-lower span {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: var(--h);
+            line-height: var(--h);
+            text-align: center;
+            font-family: var(--font);
+            font-size: var(--font-size);
+            font-weight: var(--weight);
+            transform: translateY(var(--dy));
+        }
+
+        .upper span,
+        .flip-upper span {
+            top: 0;
+        }
+
+        .lower span,
+        .flip-lower span {
+            bottom: 0;
+        }
+
+        .upper {
+            z-index: 3;
+        }
+
+        .lower {
+            z-index: 1;
+        }
+
+        .flip-upper {
+            z-index: 10;
+            transform-origin: bottom;
+            backface-visibility: hidden;
+        }
+
+        .flip-lower {
+            z-index: 2;
+            transform-origin: top;
+            transform: rotateX(90deg);
+            backface-visibility: hidden;
+        }
+
+        .flip.animate .flip-upper {
+            animation: topFlip var(--dur) linear forwards;
+        }
+
+        .flip.animate .flip-lower {
+            animation: bottomFlip var(--dur) linear var(--dur) forwards;
+        }
+
+        @keyframes topFlip {
+            from {
+                transform: rotateX(0deg);
+            }
+
+            to {
+                transform: rotateX(-90deg);
+            }
+        }
+
+        @keyframes bottomFlip {
+            from {
+                transform: rotateX(90deg);
+            }
+
+            to {
+                transform: rotateX(0deg);
+            }
+        }
+    </style>
+
+    <!-- user settings (optional; defaults below are used if missing) -->
+    <script>document.write('<script src="config.js?t=' + Date.now() + '"><\/script>');</script>
+</head>
+
+<body>
+
+    <div class="clock" id="clock"></div>
+
+    <script>
+        const H = 360;   // internal card height; the whole clock is scaled to the screen by "size"
+
+        const DEFAULTS = {
+            showSeconds: true, hour12: false,
+            separator: ":", blinkSeparator: true,          // separator "" = none
+            size: 0.9,                                      // share of the screen the clock may fill (0.1 - 1)
+            widthRatio: 0.72, digitGap: 12, groupGap: 26, radius: 16, dividerWidth: 1.5,
+            fontFamily: "Arial, sans-serif", fontWeight: 700, fontScale: 0.83,
+            themeMode: "dark",                              // "dark" | "light" | "auto" (follow macOS)
+            background: "#000000", cardColor: "#08090c", textColor: "#ffffff",
+            dividerColor: "#1c1d22", separatorColor: "#ffffff",
+            lightBackground: "#eceff3", lightCardColor: "#ffffff", lightTextColor: "#14171a",
+            lightDividerColor: "#d5d9df", lightSeparatorColor: "#14171a",
+            flipDuration: 350                               // ms per half flip, 0 = no animation
+        };
+
+        const rootStyle = document.documentElement.style;
+        const clock = document.getElementById("clock");
+        const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+        let C = Object.assign({}, DEFAULTS);
+        let digits = [];
+        let LEAD = 0;
+        let tickTimer = null;
+
+        // ---- settings -> CSS variables ----
+        function centerOffset() {
+            // Fonts place digits at different heights inside their line box. Measure the real
+            // digit glyphs and shift them so their visual centre sits on the card's middle line.
+            const ctx = document.createElement("canvas").getContext("2d");
+            ctx.font = `${C.fontWeight} ${H * C.fontScale}px ${C.fontFamily}`;
+            let asc = 0, desc = 0, fa = 0, fd = 0;
+            for (const ch of "0123456789") {
+                const m = ctx.measureText(ch);
+                asc = Math.max(asc, m.actualBoundingBoxAscent);
+                desc = Math.max(desc, m.actualBoundingBoxDescent);
+                fa = m.fontBoundingBoxAscent; fd = m.fontBoundingBoxDescent;
+            }
+            const baseline = (H - (fa + fd)) / 2 + fa;
+            return H / 2 - (baseline + (desc - asc) / 2);
+        }
+
+        function applyColors() {
+            const mode = C._theme || C.themeMode;
+            const dark = mode === "auto" ? systemDark.matches : mode !== "light";
+            const p = dark
+                ? [C.background, C.cardColor, C.textColor, C.dividerColor, C.separatorColor]
+                : [C.lightBackground, C.lightCardColor, C.lightTextColor, C.lightDividerColor, C.lightSeparatorColor];
+            ["--bg", "--card", "--text", "--divider", "--sep-color"].forEach((v, i) => rootStyle.setProperty(v, p[i]));
+        }
+        systemDark.addEventListener("change", applyColors);
+
+        function applyVars() {
+            const set = (k, v) => rootStyle.setProperty(k, v);
+            set("--h", H + "px");
+            set("--w", (H * C.widthRatio) + "px");
+            set("--divider-w", C.dividerWidth + "px");
+            set("--radius", C.radius + "px");
+            set("--font", C.fontFamily);
+            set("--weight", C.fontWeight);
+            set("--font-size", (H * C.fontScale) + "px");
+            set("--dy", centerOffset() + "px");
+            set("--sep-size", (H * 0.33) + "px");
+            set("--dur", C.flipDuration + "ms");
+            set("--digit-gap", C.digitGap + "px");
+            set("--group-gap", C.groupGap + "px");
+            applyColors();
+        }
+
+        class FlipDigit {
+            constructor(parent) {
+                this.value = "0";
+                this.el = document.createElement("div");
+                this.el.className = "flip";
+                this.el.innerHTML = `
+                    <div class="card">
+                        <div class="upper"><span>0</span></div>
+                        <div class="lower"><span>0</span></div>
+                        <div class="flip-upper"><span>0</span></div>
+                        <div class="flip-lower"><span>0</span></div>
+                    </div>`;
+                parent.appendChild(this.el);
+                this.upper = this.el.querySelector(".upper span");
+                this.lower = this.el.querySelector(".lower span");
+                this.flipUpper = this.el.querySelector(".flip-upper span");
+                this.flipLower = this.el.querySelector(".flip-lower span");
+            }
+
+            set(val) {
+                this.value = val;
+                this.upper.textContent = val;
+                this.lower.textContent = val;
+                this.flipUpper.textContent = val;
+                this.flipLower.textContent = val;
+            }
+
+            update(newVal) {
+                if (newVal === this.value) return;
+
+                if (!C.flipDuration) {
+                    this.set(newVal);
+                    return;
+                }
+
+                // top flap shows old digit and folds down; bottom flap shows new digit
+                this.flipUpper.textContent = this.value;
+                this.flipLower.textContent = newVal;
+                // top half behind the flap already shows the new digit
+                this.upper.textContent = newVal;
+                this.value = newVal;
+
+                this.el.classList.remove("animate");
+                void this.el.offsetWidth;
+                this.el.classList.add("animate");
+
+                // bottom half switches to the new digit once the lower flap has covered it
+                setTimeout(() => {
+                    if (this.value === newVal) this.lower.textContent = newVal;
+                }, C.flipDuration * 2);
+            }
+        }
+
+        // ---- build the clock: HH [:] MM [:] SS ----
+        function build() {
+            clock.innerHTML = "";
+            digits = [];
+
+            const addSeparator = () => {
+                if (!C.separator) return;
+                const s = document.createElement("div");
+                s.className = "separator" + (C.blinkSeparator ? " blink" : "");
+                s.textContent = C.separator;
+                clock.appendChild(s);
+            };
+            const addPair = () => {
+                const pair = document.createElement("div");
+                pair.className = "pair";
+                clock.appendChild(pair);
+                digits.push(new FlipDigit(pair), new FlipDigit(pair));
+            };
+
+            addPair();
+            addSeparator();
+            addPair();
+            if (C.showSeconds) {
+                addSeparator();
+                addPair();
+            }
+        }
+
+        function timeDigits(offsetMs) {
+            const now = new Date(Date.now() + (offsetMs || 0));
+            let hr = now.getHours();
+            if (C.hour12) hr = hr % 12 || 12;
+            let t = String(hr).padStart(2, "0") + String(now.getMinutes()).padStart(2, "0");
+            if (C.showSeconds) t += String(now.getSeconds()).padStart(2, "0");
+            return t;
+        }
+
+        function render(initial) {
+            const t = timeDigits(initial ? 0 : LEAD);
+            digits.forEach((digit, i) => initial ? digit.set(t[i]) : digit.update(t[i]));
+        }
+
+        function fit() {
+            clock.style.transform = "none";
+            const k = Math.min(
+                (window.innerWidth * C.size) / clock.offsetWidth,
+                (window.innerHeight * C.size) / clock.offsetHeight);
+            clock.style.transform = `scale(${k})`;
+        }
+
+        // tick on the system clock's second boundary (setInterval drifts and starts at a random phase).
+        // The flip starts one half-flip early so the visible change lands on the real second.
+        function tick() {
+            render(false);
+            tickTimer = setTimeout(tick, 1000 - ((Date.now() + LEAD) % 1000) + 5);
+        }
+
+        function start(cfg) {
+            C = Object.assign({}, DEFAULTS, cfg);
+            // older config files used fitMargin instead of size
+            if (cfg.size === undefined && cfg.fitMargin !== undefined) C.size = cfg.fitMargin;
+            if (cfg.flipDuration === undefined && cfg.animate === false) C.flipDuration = 0;
+            if (cfg.separator === undefined && cfg.showSeparator === false) C.separator = "";
+
+            LEAD = C.flipDuration;
+            clearTimeout(tickTimer);
+            applyVars();
+            build();
+            render(true);
+            fit();
+            tickTimer = setTimeout(tick, 1000 - ((Date.now() + LEAD) % 1000) + 5);
+        }
+
+        // initial settings: ?cfg=<json> (used by tools) overrides config.js
+        let first = Object.assign({}, window.FLIPCLOCK || {});
+        try { Object.assign(first, JSON.parse(new URLSearchParams(location.search).get("cfg") || "{}")); } catch (e) { }
+        start(first);
+
+        window.addEventListener("resize", fit);
+        // fonts may finish loading after the first layout
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { applyVars(); fit(); });
+
+        // live updates from the settings window preview (no reload, so no flicker)
+        window.addEventListener("message", e => {
+            if (e.data && e.data.flipclock) {
+                start(e.data.flipclock);
+                if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { applyVars(); fit(); });
+            }
+        });
+    </script>
+</body>
+
+</html>
